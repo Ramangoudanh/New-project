@@ -91,3 +91,12 @@ def clone_chunk_store_repo(
         "collection_name": collection,
         "chunks_stored": len(chunked_docs),
     }
+
+if __name__ == "__main__":
+    github_url = "https://github.com/openai/openai-cookbook"
+    postgres_url = "postgresql+psycopg://postgres:password@localhost:5432/vector_db"
+
+    summary = clone_chunk_store_repo(github_url, postgres_url)
+    print("\n--- Summary ---")
+    print(summary)
+
