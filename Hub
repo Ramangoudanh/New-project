@@ -81,6 +81,19 @@ def clone_chunk_store_repo(
         collection_name=collection,
         use_jsonb=True,  # metadata stored in JSONB
     )
+print(f"💾 Storing chunks in batches of {batch_size} ...")
+    total = len(chunked_docs)
+    for i in range(0, total, batch_size):
+        batch = chunked_docs[i:i + batch_size]
+        try:
+            vector_store.add_documents(batch)
+            print(f"✅ Stored batch {i // batch_size + 1} ({i + len(batch)} / {total})")
+        except Exception as e:
+            print(f"⚠️ Error storing batch {i // batch_size + 1}: {e}")
+            time.sleep(2)  # small delay for rate limits
+
+    print(f"🎉 Done! {total} chunks stored in collection '{collection}'")
+
 
     print(f"✅ Stored {len(chunked_docs)} chunks in collection '{collection}'")
 
