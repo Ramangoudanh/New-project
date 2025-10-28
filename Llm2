@@ -152,3 +152,66 @@ def search_documents(query, repo_id, postgres_url, bm25_index, documents, n_resu
     final = list(all_results.values())[:n_results]
 
     return final
+# file: services/file_processing.py
+
+def main():
+    """
+    Demonstrates full repository flow:
+    1. Clone GitHub repository
+    2. Index and store chunks in pgvector
+    3. Perform hybrid + semantic search within that repo
+    """
+
+    # --- 🧩 Step 1: Config ---
+    GITHUB_URL = "https://github.com/tiangolo/fastapi.git"  # you can replace this
+    POSTGRES_URL = "postgresql+psycopg://postgres:password@localhost:5432/vector_db"
+
+    print("🚀 Starting repository processing pipeline...\n")
+
+    # --- 🌀 Step 2: Clone the repository ---
+    repo_id, repo_path = clone_github_repo(GITHUB_URL)
+    if not repo_id:
+        print("❌ Repository cloning failed. Exiting.")
+        return
+
+    print(f"✅ Repo cloned successfully.\nRepo ID: {repo_id}\nRepo Path: {repo_path}\n")
+
+    # --- 🧠 Step 3: Index and push to pgvector ---
+    repo_data = load_and_index_files(
+        repo_id=repo_id,
+        repo_path=repo_path,
+        postgres_url=POSTGRES_URL
+    )
+
+    print(f"📊 Indexed {len(repo_data['documents'])} chunks from {len(repo_data['file_type_counts'])} file types.")
+    print(f"🧠 Data pushed to pgvector under collection: repo_{repo_id}")
+
+    # --- 🔍 Step 4: Search query ---
+    print("\n🔍 Performing sample search...")
+    query = "authentication middleware"
+    results = search_documents(
+        query=query,
+        repo_id=repo_id,
+        postgres_url=POSTGRES_URL,
+        bm25_index=repo_data["index"],
+        documents=repo_data["documents"],
+        n_results=5
+    )
+
+    # --- 📜 Step 5: Display results ---
+    print(f"\n💬 Query: {query}")
+    print(f"📂 Found {len(results)} relevant code/document sections:\n")
+
+    for i, doc in enumerate(results, start=1):
+        meta = doc.metadata
+        print(f"🔹 {i}. {meta.get('source', 'unknown file')}")
+        print(f"   📄 File ID: {meta.get('file_id')}")
+        print(f"   📁 Repo ID: {meta.get('repo_id')}")
+        print(f"   ✏️  Snippet:\n{doc.page_content[:300]}...\n")
+
+    print("✅ Search completed successfully.")
+
+
+# Entry point
+if __name__ == "__main__":
+    main()
