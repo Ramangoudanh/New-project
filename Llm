@@ -1,0 +1,92 @@
+# file: services/repo_intelligence.py
+
+import json
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_postgres import PGVector
+from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
+from langchain_community.tools import DuckDuckGoSearchResults
+
+
+def see_repository_intelligence(
+    repo_id: str,
+    postgres_url: str,
+    collection_name: str,
+    query: str = "Analyze the repository and detect its type, entry points, dependencies, and framework.",
+):
+    """
+    Retrieve stored repo chunks from pgvector, analyze using LLM + web search,
+    and return structured repository intelligence.
+
+    Args:
+        repo_id (str): ID of the repository stored.
+        postgres_url (str): PostgreSQL + pgvector connection string.
+        collection_name (str): Vector collection name for this repo.
+        query (str): Query for the analysis (default: full repo understanding).
+
+    Returns:
+        dict: Structured analysis summary.
+    """
+
+    # --- 1️⃣ Connect to vector store ---
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vector_store = PGVector(
+        connection_string=postgres_url,
+        collection_name=collection_name,
+        embedding_function=embeddings,
+        use_jsonb=True,
+    )
+
+    retriever = vector_store.as_retriever(search_kwargs={"k": 8})
+
+    # --- 2️⃣ Prepare web search + LLM ---
+    web_search = DuckDuckGoSearchResults()
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+
+    # --- 3️⃣ Prompt for LLM ---
+    prompt = PromptTemplate(
+        input_variables=["context", "query", "web"],
+        template=(
+            "You are a repository intelligence system.\n"
+            "Using the following repository context and web info, analyze the codebase.\n\n"
+            "Context:\n{context}\n\n"
+            "Web Info:\n{web}\n\n"
+            "Task:\n{query}\n\n"
+            "Return your answer in JSON with keys:\n"
+            "repo_type, structure, important_files, entry_point, dependencies, framework, summary"
+        ),
+    )
+
+    # --- 4️⃣ Retrieve relevant chunks ---
+    retrieved_docs = retriever.get_relevant_documents(query)
+    context = "\n".join([doc.page_content for doc in retrieved_docs])
+
+    # --- 5️⃣ Web search for framework hints ---
+    search_results = web_search.run(f"{query} repository type and framework details")
+
+    # --- 6️⃣ Invoke LLM ---
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        retriever=retriever,
+        chain_type_kwargs={"prompt": prompt},
+        return_source_documents=False,
+    )
+
+    response = qa_chain.invoke(
+        {
+            "context": context,
+            "query": query,
+            "web": search_results,
+        }
+    )
+
+    # --- 7️⃣ Parse structured JSON ---
+    try:
+        structured_output = json.loads(response["result"])
+    except Exception:
+        structured_output = {"summary": response["result"]}
+
+    structured_output["repo_id"] = repo_id
+    structured_output["collection_name"] = collection_name
+
+    return structured_output
