@@ -90,3 +90,15 @@ def see_repository_intelligence(
     structured_output["collection_name"] = collection_name
 
     return structured_output
+
+if __name__ == "__main__":
+    postgres_url = "postgresql+psycopg://postgres:password@localhost:5432/vector_db"
+
+    result = see_repository_intelligence(
+        repo_id="a1b2c3d4",
+        postgres_url=postgres_url,
+        collection_name="repo_a1b2c3d4"
+    )
+
+    print(json.dumps(result, indent=2))
+
