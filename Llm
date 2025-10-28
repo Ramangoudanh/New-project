@@ -3,9 +3,9 @@
 import json
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_postgres import PGVector
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
+from langchain.prompts import ChatPromptTemplate
 from langchain_community.tools import DuckDuckGoSearchResults
+from langchain_core.runnables import RunnablePassthrough
 
 
 def see_repository_intelligence(
@@ -43,62 +43,51 @@ def see_repository_intelligence(
     web_search = DuckDuckGoSearchResults()
     llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
 
-    # --- 3️⃣ Prompt for LLM ---
-    prompt = PromptTemplate(
-        input_variables=["context", "query", "web"],
-        template=(
-            "You are a repository intelligence system.\n"
-            "Using the following repository context and web info, analyze the codebase.\n\n"
-            "Context:\n{context}\n\n"
-            "Web Info:\n{web}\n\n"
-            "Task:\n{query}\n\n"
-            "Return your answer in JSON with keys:\n"
-            "repo_type, structure, important_files, entry_point, dependencies, framework, summary"
-        ),
-    )
-
-    # --- 4️⃣ Retrieve relevant chunks ---
+    # --- 3️⃣ Get context + web info ---
     retrieved_docs = retriever.get_relevant_documents(query)
     context = "\n".join([doc.page_content for doc in retrieved_docs])
+    web_results = web_search.run(f"{query} repository type and framework details")
 
-    # --- 5️⃣ Web search for framework hints ---
-    search_results = web_search.run(f"{query} repository type and framework details")
+    # --- 4️⃣ Modern LCEL-style prompt ---
+    prompt = ChatPromptTemplate.from_template(
+        """You are a repository intelligence system.
+        Using the following repository context and web info, analyze the codebase.
 
-    # --- 6️⃣ Invoke LLM ---
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        retriever=retriever,
-        chain_type_kwargs={"prompt": prompt},
-        return_source_documents=False,
+        Context:
+        {context}
+
+        Web Info:
+        {web}
+
+        Task:
+        {query}
+
+        Return your answer in JSON with keys:
+        repo_type, structure, important_files, entry_point, dependencies, framework, summary.
+        """
     )
 
-    response = qa_chain.invoke(
+    # --- 5️⃣ Build LCEL chain (retriever + prompt + LLM) ---
+    chain = (
         {
-            "context": context,
-            "query": query,
-            "web": search_results,
+            "context": lambda _: context,  # static repo context
+            "query": RunnablePassthrough(),
+            "web": lambda _: web_results,  # static web info
         }
+        | prompt
+        | llm
     )
 
-    # --- 7️⃣ Parse structured JSON ---
+    # --- 6️⃣ Run the chain ---
+    response = chain.invoke(query)
+
+    # --- 7️⃣ Parse JSON output ---
     try:
-        structured_output = json.loads(response["result"])
+        structured_output = json.loads(response.content)
     except Exception:
-        structured_output = {"summary": response["result"]}
+        structured_output = {"summary": response.content}
 
     structured_output["repo_id"] = repo_id
     structured_output["collection_name"] = collection_name
 
     return structured_output
-
-if __name__ == "__main__":
-    postgres_url = "postgresql+psycopg://postgres:password@localhost:5432/vector_db"
-
-    result = see_repository_intelligence(
-        repo_id="a1b2c3d4",
-        postgres_url=postgres_url,
-        collection_name="repo_a1b2c3d4"
-    )
-
-    print(json.dumps(result, indent=2))
-
