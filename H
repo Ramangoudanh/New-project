@@ -78,3 +78,34 @@ def process_repo(github_url):
 if __name__ == "__main__":
     github_url = "https://github.com/psf/requests.git"
     process_repo(github_url)
+def process_files(repo_name, repo_path):
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+    docs = []
+
+    for root, _, files in os.walk(repo_path):
+        for file in files:
+            file_path = os.path.join(root, file)
+            rel_path = os.path.relpath(file_path, repo_path)
+
+            if any(file.endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".exe", ".zip", ".gif", ".lock", ".pyc"]):
+                continue
+
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read().replace('\x00', '')  # ✅ remove null characters
+            except Exception as e:
+                print(f"⚠️ Error reading {rel_path}: {e}")
+                continue
+
+            chunks = splitter.split_text(content)
+            for i, chunk in enumerate(chunks):
+                metadata = {
+                    "repo_name": repo_name,
+                    "file_name": rel_path,
+                    "chunk_index": i + 1,
+                    "total_chunks": len(chunks),
+                }
+                docs.append(Document(page_content=chunk, metadata=metadata))
+
+    print(f"✅ {len(docs)} chunks created for repo '{repo_name}'")
+    return docs
