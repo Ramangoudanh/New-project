@@ -126,3 +126,30 @@ def clone_repo(github_url):
         subprocess.run(["git", "clone", "--depth", "1", github_url, repo_path], check=True)
 
     return repo_name, repo_path
+
+
+def query_by_file(file_name: str, question: str, top_k: int = 3):
+    """Query only chunks belonging to a specific file."""
+    vectorstore = PGVector(
+        connection_string=CONNECTION_STRING,
+        embedding_function=embeddings,
+        collection_name=COLLECTION_NAME,
+    )
+
+    results = vectorstore.similarity_search(
+        query=question,
+        k=top_k,
+        filter={"file_name": {"$eq": file_name}}
+    )
+if not results:
+        print(f"⚠️ No results found for file: {file_name}")
+        return []
+
+    print(f"\n🔍 Query results for file: {file_name}")
+    for doc in results:
+        print(f"\n📄 Repo: {doc.metadata['repo_name']}")
+        print(f"Chunk #{doc.metadata['chunk_index']} of {doc.metadata['total_chunks']}")
+        print("-" * 60)
+        print(doc.page_content[:400], "...\n")
+
+    return results
