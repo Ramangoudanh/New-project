@@ -109,3 +109,20 @@ def process_files(repo_name, repo_path):
 
     print(f"✅ {len(docs)} chunks created for repo '{repo_name}'")
     return docs
+
+
+def clone_repo(github_url):
+    """Clone repo to a permanent local directory."""
+    base_dir = "./repos"  # local folder for cloned repos
+    os.makedirs(base_dir, exist_ok=True)
+
+    repo_name = github_url.split("/")[-1].replace(".git", "")
+    repo_path = os.path.join(base_dir, repo_name)
+
+    if os.path.exists(repo_path):
+        print(f"📂 Repo '{repo_name}' already exists. Pulling latest changes...")
+        subprocess.run(["git", "-C", repo_path, "pull"], check=True)
+    else:
+        subprocess.run(["git", "clone", "--depth", "1", github_url, repo_path], check=True)
+
+    return repo_name, repo_path
